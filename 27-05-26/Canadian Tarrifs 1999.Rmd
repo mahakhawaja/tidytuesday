@@ -1,0 +1,162 @@
+---
+title: "Tidy Tuesday 27/04/26"
+output: html_document
+date: "2026-04-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidytuesdayR)
+library(janitor)
+library(tinytable)
+
+# Download TidyTuesday data
+tuesdata <- tidytuesdayR::tt_load("2026-04-28")
+
+# Find what datasets are present for this week
+names(tuesdata)
+
+# Rename datasets for easier access
+agreements <- tuesdata$agreements
+quantity_codes <- tuesdata$quantity_codes
+tariff_agricultural <- tuesdata$tariff_agricultural
+tariff_codes <- tuesdata$tariff_codes
+```
+
+
+```{r view-data}
+# View the structure of each dataset
+glimpse(agreements)
+glimpse(quantity_codes)
+glimpse(tariff_agricultural)
+glimpse(tariff_codes)
+
+head(agreements)
+head(quantity_codes)
+head(tariff_agricultural)
+head(tariff_codes)
+
+str(agreements)
+str(quantity_codes)
+str(tariff_agricultural)
+
+# tariff_agricultural = main data
+# agreements = explains agreement names
+# tariff_codes = explains product codes
+# quantity_codes = explains measurement unit codes
+```
+
+
+```{r editing}
+
+tariff_agricultural |> 
+  filter(agreement == "canada") |> 
+  summarise(
+    rows = n(),
+    earliest_begin = min(begin_effective_date, na.rm = TRUE),
+    latest_begin = max(begin_effective_date, na.rm = TRUE),
+    earliest_end = min(end_effective_date, na.rm = TRUE),
+    latest_end = max(end_effective_date, na.rm = TRUE)
+  )
+
+canada_1999 <- tariff_agricultural |> 
+  filter(
+    agreement == "canada",
+   begin_effective_date <= as.Date("1999-12-31"),
+   end_effective_date >= as.Date("1999-01-01")
+  )
+
+glimpse(canada_1999)
+
+canada_1999_joined <- canada_1999 |> 
+  left_join(tariff_codes, by = "hts8")
+
+canada_1999_joined |> 
+  select(hts8, description, ad_val_rate, specific_rate) |> 
+  arrange(desc(specific_rate)) |> 
+  print(n = 109)
+
+glimpse(canada_1999_joined)
+
+canada_1999_joined |> 
+  filter(specific_rate > 0) |> 
+  select(hts8, description, ad_val_rate, specific_rate)
+
+# Flag tariff type for all products, not just nonzero
+canada_1999_categorized <- canada_1999_joined |> 
+  mutate(
+    tariff_status = case_when(
+      specific_rate >= 10000             ~ "Prohibitive/sentinel rate",
+      specific_rate > 0                  ~ "Nonzero specific rate",
+      ad_val_rate > 0                    ~ "Ad valorem rate only",
+      TRUE                               ~ "Zero tariff (duty-free)"
+    ),
+    product_group = case_when(
+      str_detect(str_to_lower(description), "juice|vegetable juice") ~ "Juices",
+      str_detect(str_to_lower(description), "sugar|syrup")           ~ "Sugar/syrups",
+      str_detect(str_to_lower(description), "beef|bovine")           ~ "Beef/bovine",
+      str_detect(str_to_lower(description), "fish|salmon|cod|herring|anchov|sturgeon|sole|mackerel") ~ "Fish/seafood",
+      TRUE                                                           ~ "Other agricultural"
+    )
+  )
+```
+
+```{r plotting}
+# Flag tariff type for all products
+canada_1999_categorized <- canada_1999_joined |> 
+  mutate(
+    tariff_status = case_when(
+      specific_rate >= 10000             ~ "Prohibitive/sentinel rate",
+      specific_rate > 0                  ~ "Nonzero specific rate",
+      ad_val_rate > 0                    ~ "Ad valorem rate only",
+      TRUE                               ~ "Zero tariff (duty-free)"
+    ),
+    product_group = case_when(
+      str_detect(str_to_lower(description), "juice|vegetable juice") ~ "Juices",
+      str_detect(str_to_lower(description), "sugar|syrup")           ~ "Sugar/syrups",
+      str_detect(str_to_lower(description), "beef|bovine")           ~ "Beef/bovine",
+      str_detect(str_to_lower(description), "fish|salmon|cod|herring|anchov|sturgeon|sole|mackerel") ~ "Fish/seafood",
+      TRUE                                                           ~ "Other agricultural"
+    )
+  )
+
+# Plot: product group breakdown by tariff status
+canada_1999_categorized |> 
+  count(product_group, tariff_status) |> 
+  mutate(product_group = fct_reorder(product_group, n, sum)) |> 
+  ggplot(aes(x = n, y = product_group, fill = tariff_status)) +
+  geom_col(width = 0.6) +
+  scale_fill_manual(
+    values = c(
+      "Zero tariff (duty-free)"      = "#2E86AB",
+      "Ad valorem rate only"         = "#E84855",
+      "Nonzero specific rate"        = "#E07F51",
+      "Prohibitive/sentinel rate"    = "#C1121F"
+    ),
+    name = "Tariff status"
+  ) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.1))) +
+  labs(
+    title = "Canada–US Agricultural Tariff Lines Active in 1999",
+    subtitle = "Most products were duty-free under NAFTA; juices and sugars faced high specific rates",
+    x = "Number of products",
+    y = NULL,
+    caption = "Source: TidyTuesday 2026-04-28 | USDA Agricultural Tariff Data"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title         = element_text(face = "bold", size = 14),
+    plot.subtitle      = element_text(color = "grey40", size = 10),
+    plot.caption       = element_text(color = "grey60", size = 8),
+    legend.position    = "bottom",
+    legend.title       = element_text(size = 10),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor   = element_blank()
+  )
+```
+
+```{r stop-here, include=FALSE}
+knitr::knit_exit()
+```
