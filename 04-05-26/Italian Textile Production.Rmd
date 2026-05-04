@@ -1,0 +1,196 @@
+---
+title: "Tidy Tuesday"
+output: html_document
+date: "2026-05-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidytuesdayR)
+library(janitor)
+library(tinytable)
+
+# Download TidyTuesday data
+tuesdata <- tidytuesdayR::tt_load("2026-05-05")
+
+# Find what datasets are present for this week
+names(tuesdata)
+
+# Name datasets
+food <- tuesdata$food_beverages
+textiles <- tuesdata$textiles
+transport <- tuesdata$transport
+
+readme(tuesdata)
+```
+
+
+
+```{r view-data, warning=FALSE}
+# View the structure of each dataset
+glimpse(food)
+glimpse(textiles)
+glimpse(transport)
+
+head(food)
+head(textiles)
+head(transport)
+
+food <- clean_names(food)
+textiles <- clean_names(textiles)
+transport <- clean_names(transport)
+
+```
+
+```{r coding, warning=FALSE}
+
+colSums(is.na(food))
+colSums(is.na(textiles))
+colSums(is.na(transport))
+
+
+range(food$year)
+range(textiles$year)
+range(transport$year)
+```
+
+```{r graph, warning=FALSE}
+library(scales)
+textiles_selected <- textiles %>%
+  filter(year >= 1900) %>%
+  pivot_longer(
+    cols = c(
+      cotton_yarn,
+      flock_yarn,
+      cotton_textiles,
+      flock_textiles,
+      other_textiles,
+      raw_silk
+    ),
+    names_to = "textile_type",
+    values_to = "production"
+  ) %>%
+  filter(!is.na(production)) %>%
+  mutate(
+    textile_type = case_when(
+      textile_type == "cotton_yarn" ~ "Cotton yarn",
+      textile_type == "flock_yarn" ~ "Flock yarn",
+      textile_type == "cotton_textiles" ~ "Cotton textiles",
+      textile_type == "flock_textiles" ~ "Flock textiles",
+      textile_type == "other_textiles" ~ "Other textiles",
+      textile_type == "raw_silk" ~ "Raw silk"
+    )
+  )
+```
+
+
+```{r more graph, warning=FALSE}
+ggplot(
+  textiles_selected,
+  aes(x = year, y = production, color = textile_type)
+) +
+  annotate(
+    "rect",
+    xmin = 1939,
+    xmax = 1945,
+    ymin = -Inf,
+    ymax = Inf,
+    alpha = 0.18,
+    fill = "#5A3E36"
+  ) +
+  geom_line(linewidth = 0.9, alpha = 0.95) +
+  geom_point(size = 1.2, alpha = 0.75) +
+  annotate(
+    "text",
+    x = 1942,
+    y = max(textiles_selected$production, na.rm = TRUE) * 0.95,
+    label = "Sharp wartime\ndisruption",
+    size = 3,
+    fontface = "bold",
+    color = "#3B2F2F"
+  ) +
+  scale_y_continuous(
+    labels = comma
+  ) +
+  labs(
+    title = "Italian Textile Production After 1900",
+    subtitle = "Cotton, flock, other textiles, and raw silk production show a sharp mid-century disruption",
+    x = NULL,
+    y = "Production in tons",
+    color = NULL,
+    caption = "Source: TidyTuesday 2026-05-04| ISTAT historical industrial production"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.background = element_rect(fill = "#F6EFE7", color = NA),
+    panel.background = element_rect(fill = "#F6EFE7", color = NA),
+    panel.grid.major = element_line(color = "#D8C8B8", linewidth = 0.35),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(
+      face = "bold",
+      size = 22,
+      color = "#2E2520"
+    ),
+    plot.subtitle = element_text(
+      size = 12.5,
+      color = "#5C5048",
+      margin = margin(b = 12)
+    ),
+    axis.title.y = element_text(
+      color = "#3B2F2F",
+      face = "bold"
+    ),
+    axis.text = element_text(color = "#3B2F2F"),
+    legend.position = "bottom",
+    legend.text = element_text(size = 11, color = "#3B2F2F"),
+    plot.caption = element_text(
+      color = "#6E625D",
+      size = 9,
+      hjust = 1
+    )
+  )
+
+
+
+ggplot(
+  textiles_selected,
+  aes(x = year, y = production, color = textile_type)
+) +
+  annotate(
+    "rect",
+    xmin = 1939,
+    xmax = 1945,
+    ymin = -Inf,
+    ymax = Inf,
+    alpha = 0.18,
+    fill = "#5A3E36"
+  ) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 1.0, alpha = 0.7) +
+  facet_wrap(~ textile_type, scales = "free_y", ncol = 2) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "The Shock to Italian Textile Production",
+    subtitle = "Selected textile industries after 1900, with the 1939–1945 disruption highlighted",
+    x = NULL,
+    y = "Production in tons",
+    caption = "Source: TidyTuesday 2026-05-04| ISTAT historical industrial production"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.background = element_rect(fill = "#F6EFE7", color = NA),
+    panel.background = element_rect(fill = "#F6EFE7", color = NA),
+    strip.background = element_rect(fill = "#E8D8C8", color = NA),
+    strip.text = element_text(face = "bold", color = "#2E2520"),
+    panel.grid.major = element_line(color = "#D8C8B8", linewidth = 0.35),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold", size = 21, color = "#2E2520"),
+    plot.subtitle = element_text(size = 12, color = "#5C5048"),
+    axis.text = element_text(color = "#3B2F2F"),
+    legend.position = "none",
+    plot.caption = element_text(color = "#6E625B", size = 9, hjust = 1)
+  )
+```
+
