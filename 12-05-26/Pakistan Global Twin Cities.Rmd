@@ -1,0 +1,185 @@
+---
+title: "Tidy Tuesday"
+output: html_document
+date: "2026-05-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidytuesdayR)
+library(janitor)
+library(tinytable)
+library(maps)
+library(ggthemes)
+library(patchwork)
+
+# Download TidyTuesday data
+tuesdata <- tidytuesdayR::tt_load("2026-05-12")
+
+# Find what datasets are present for this week
+names(tuesdata)
+
+# Name datasets
+cities <- tuesdata$cities
+links <- tuesdata$links
+
+readme(tuesdata)
+```
+
+```{r view-data, warning=FALSE}
+# View the structure of each dataset
+glimpse(cities)
+glimpse(links)
+
+links_annotated <- links %>%
+  left_join(cities %>%
+              select(id, name, country, continent, lat, lng), 
+            by = c("source" = "id")) %>%
+  rename(source_name = name, source_country = country,
+         source_continent = continent, source_lat = lat, source_lng = lng) %>%
+  left_join(cities %>%
+              select(id, name, country, continent, lat, lng), 
+            by = c("target" = "id")) %>%
+  rename(target_name = name, target_country = country, target_continent = continent, target_lat = lat, target_lng = lng)
+```
+
+```{r exploring, warning=FALSE}
+bind_rows(
+  links %>%
+    count(city_id = source),
+  links %>%
+    count(city_id = target)
+) %>%
+  summarise(n = sum(n), .by = city_id) %>%
+  left_join(cities %>%
+              select(id, name, country), by = c("city_id" = "id")) %>%
+  slice_max(n, n = 10)
+
+links_annotated %>%
+  filter(source_country == "Pakistan" | target_country == "Pakistan") %>%
+  mutate(
+    pak_city = if_else(source_country == "Pakistan", source_name, target_name),
+    partner_city = if_else(source_country == "Pakistan", target_name, source_name),
+    partner_country = if_else(source_country == "Pakistan", target_country, source_country)
+  ) %>%
+  select(pak_city, partner_city, partner_country) %>%
+  arrange(pak_city)
+```
+
+```{r data-prep, warning=FALSE}
+# world map data
+world <- map_data("world")
+
+country_colors <- world %>%
+  distinct(region) %>%
+  mutate(color_group = as.factor(as.integer(factor(region)) %% 6))
+
+world_colored <- world %>%
+  left_join(country_colors, by = "region")
+
+# pakistan links with coordinates
+pak_links <- links_annotated %>%
+  filter(source_country == "Pakistan" | target_country == "Pakistan") %>%
+  mutate(
+    pak_city = if_else(source_country == "Pakistan", source_name, target_name),
+    partner_city = if_else(source_country == "Pakistan", target_name, source_name),
+    partner_country = if_else(source_country == "Pakistan", target_country, source_country),
+    pak_lat = if_else(source_country == "Pakistan", source_lat, target_lat),
+    pak_lng = if_else(source_country == "Pakistan", source_lng, target_lng),
+    partner_lat = if_else(source_country == "Pakistan", target_lat, source_lat),
+    partner_lng = if_else(source_country == "Pakistan", target_lng, source_lng)
+  )
+```
+
+```{r graph, warning=FALSE}
+
+# --- main map ---
+main_map <- ggplot() +
+  geom_polygon(
+    data = world_colored,
+    aes(x = long, y = lat, group = group, fill = color_group),
+    color = "white", linewidth = 0.15
+  ) +
+  scale_fill_manual(
+    values = c(
+      "0" = "#d4e6c3", "1" = "#c3d4e6", "2" = "#e6c3d4",
+      "3" = "#e6d4c3", "4" = "#c3e6e0", "5" = "#d4c3e6"
+    ),
+    guide = "none"
+  ) +
+  geom_segment(
+    data = pak_links,
+    aes(x = pak_lng, y = pak_lat, xend = partner_lng, yend = partner_lat),
+    color = "black", alpha = 0.3, linewidth = 0.4
+  ) +
+  geom_point(data = pak_links, aes(x = partner_lng, y = partner_lat),
+             color = "black", size = 1.5, alpha = 0.7) +
+  geom_point(data = pak_links, aes(x = pak_lng, y = pak_lat),
+             color = "#c0392b", size = 0.8) +
+  coord_fixed(1.3) +
+  theme_void() +
+  theme(
+    plot.background = element_rect(fill = "#fdfdf7", color = NA),
+    plot.caption = element_text(hjust = 1, size = 8, color = "grey50",
+                                margin = margin(b = 10, r = 10)),
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold",
+                              margin = margin(t = 15, b = 5)),
+    plot.subtitle = element_text(hjust = 0.5, size = 9, color = "grey40",
+                                 margin = margin(b = 10))
+  ) +
+  labs(
+    title = "Pakistan's Twin City Connections",
+    subtitle = "Lines show twinning relationships between Pakistani cities and their global partners",
+    caption = "Source: TidyTuesday 2026-05-12 | Pakistan's Twin City Connections"
+  )
+
+# --- inset: zoomed into Pakistan ---
+inset <- ggplot() +
+  geom_polygon(
+    data = world_colored,
+    aes(x = long, y = lat, group = group, fill = color_group),
+    color = "white", linewidth = 0.3
+  ) +
+  scale_fill_manual(
+    values = c(
+      "0" = "#d4e6c3", "1" = "#c3d4e6", "2" = "#e6c3d4",
+      "3" = "#e6d4c3", "4" = "#c3e6e0", "5" = "#d4c3e6"
+    ),
+    guide = "none"
+  ) +
+  geom_point(data = pak_links, aes(x = pak_lng, y = pak_lat),
+             color = "#c0392b", size = 1.5) +
+geom_text(
+  data = pak_links %>%
+    distinct(pak_city, pak_lng, pak_lat) %>%
+    mutate(
+      nudge_x = case_when(
+        pak_city == "Muzaffarabad" ~ -0.5,
+        pak_city == "Peshawar"    ~ -0.5,
+        pak_city == "Faisalabad"   ~ -0.5,
+        TRUE ~ 0.3
+      ),
+      nudge_y = case_when(
+        pak_city == "Muzaffarabad" ~ 0.3,
+        TRUE ~ 0
+      ),
+      hjust = case_when(
+        pak_city %in% c("Muzaffarabad", "Peshawar", "Faisalabad") ~ 1,
+        TRUE ~ -0.1
+      ),
+    ),
+  aes(x = pak_lng + nudge_x, y = pak_lat + nudge_y, label = pak_city, hjust = hjust),
+  size = 2.5, color = "grey20") +
+  coord_fixed(1.4, xlim = c(61, 79), ylim = c(24, 37)) +  # zoom to Pakistan
+  theme_void() +
+  theme(
+    panel.border = element_rect(color = "grey40", fill = NA, linewidth = 0.8),
+    plot.background = element_rect(fill = "#fdfdf7", color = "grey40", linewidth = 0.8)
+  )
+
+# --- combine with patchwork ---
+main_map + inset_element(inset, left = 0.0, bottom = 0.0, right = 0.33, top = 0.43)
+
+```
+
