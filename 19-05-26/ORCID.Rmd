@@ -1,0 +1,160 @@
+---
+title: "Tidy Tuesday"
+output: html_document
+date: "2026-05-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidytuesdayR)
+library(janitor)
+library(tinytable)
+library(maps)
+library(ggthemes)
+library(patchwork)
+library(scales)
+library(ggtext)
+
+# Download TidyTuesday data
+tuesdata <- tidytuesdayR::tt_load("2026-05-19")
+
+# Find what datasets are present for this week
+names(tuesdata)
+
+# Name datasets
+member_part <- tuesdata$member_participation_stats_by_country
+metadata <- tuesdata$metadata_coverage_stats_by_country
+
+readme(tuesdata)
+```
+
+```{r view-data, warning=FALSE}
+# View the structure of each dataset
+glimpse(member_part)
+glimpse(metadata)
+
+```
+
+Okay so, from what I understand about the data, member_part is one row per country and counts how many publishers in that country have deposited each type of metadata. The other dataset is a row per country plus a document type and counts how many individual papers have each type of metadata. 
+
+```{r exploring, warning=FALSE}
+latest <- member_part %>%
+  filter(current_up_to == max(current_up_to))
+
+latest <- latest %>%
+  mutate(pct_orcid_authors = deposits_orcid_for_authors / total_members)
+
+latest %>%
+  filter(total_members >= 10) %>%
+  select(iso3_code, region_id, total_members, deposits_orcid_for_authors, pct_orcid_authors) %>%
+  arrange(desc(pct_orcid_authors)) %>%
+  head(20)
+
+latest %>%
+  filter(total_members >= 10) %>%
+  select(iso3_code, region_id, total_members, deposits_orcid_for_authors, pct_orcid_authors) %>%
+  arrange(pct_orcid_authors) %>%
+  head(20)
+
+latest %>%
+  filter(total_members >= 10) %>%
+  count(region_id)
+```
+
+```{r graph, warning=FALSE}
+region_summary <- latest %>%
+  filter(total_members >= 10) %>%
+  group_by(region_id) %>%
+  summarise(
+    total_members = sum(total_members),
+    total_orcid = sum(deposits_orcid_for_authors),
+    pct_orcid = total_orcid / total_members
+  )
+
+region_summary
+
+region_labels <- c(
+  EAS = "East Asia & Pacific",
+  ECS = "Europe & Central Asia",
+  LCN = "Latin America & Caribbean",
+  MEA = "Middle East & North Africa",
+  NAC = "North America",
+  SAS = "South Asia",
+  SSF = "Sub-Saharan Africa"
+)
+
+# Colors
+bg       <- "#0d0d0d"
+bar_dark <- "#3d2040"
+pink_hi  <- "#ff3da6"
+text_hi  <- "#ffffff"
+text_mut <- "#888888"
+
+# Create plot_data
+plot_data <- region_summary %>%
+  mutate(
+    region_name = region_labels[region_id],
+    region_name = fct_reorder(region_name, pct_orcid),
+    highlight = region_id == "LCN"
+  )
+
+ggplot(plot_data, aes(x = pct_orcid, y = region_name, fill = highlight)) +
+  geom_col(width = 0.55) +
+  geom_text(
+    aes(label = percent(pct_orcid, accuracy = 1)),
+    hjust = -0.2,
+    size = 4,
+    fontface = "bold",
+    color = text_hi
+  ) +
+  geom_text(
+    data = filter(plot_data, highlight),
+    aes(x = pct_orcid + 0.06, label = "leads the world"),
+    hjust = 0,
+    size = 3.2,
+    fontface = "italic",
+    color = pink_hi
+  ) +
+  scale_fill_manual(values = c("TRUE" = "#ff3da6", "FALSE" = bar_dark)) +  # brighter pink
+  scale_x_continuous(limits = c(0, 1.25), expand = c(0, 0)) +
+  scale_y_discrete(expand = expansion(add = c(0.8, 0.8))) +  # gap between bars and edges
+  labs(
+  title = "Who's identifying their <span style='color:#ff3da6'>researchers?</span>",
+  subtitle = "<span style='color:#ff3da6'><b>TIDYTUESDAY 2026 · WEEK 20 · CROSSREF</b></span><br><br>Share of publishers per region that include author ORCID IDs<br>in at least one deposited work · members with 10+ registered DOIs only",
+  caption = "Source: Crossref via #TidyTuesday 2026 Week 20  ·  ORCID = Open Researcher & Contributor ID"
+) +
+  theme_void(base_family = "sans") +
+  theme(
+    plot.background  = element_rect(fill = bg, color = NA),
+    panel.background = element_rect(fill = bg, color = NA),
+    plot.title.position = "plot",        # <-- add here
+    plot.caption.position = "plot",      # <-- and here
+    plot.title    = ggtext::element_markdown(
+      color = text_hi, size = 26, face = "bold",
+      margin = margin(b = 4),
+      hjust = 0
+    ),
+    plot.subtitle = ggtext::element_markdown(
+      color = text_mut, size = 11, lineheight = 1.5,
+      margin = margin(b = 20),
+      hjust = 0
+    ),
+    plot.caption = element_text(
+      color = "#555555", size = 9, hjust = 1,
+      margin = margin(t = 20)
+    ),
+    axis.text.y = ggtext::element_markdown(
+      color = ifelse(
+        levels(plot_data$region_name) == "Latin America & Caribbean",
+        "#ffffff", "#aaaaaa"
+      ),
+      size = 11, hjust = 1, lineheight = 1.3,
+      margin = margin(r = 12)
+    ),
+    axis.text.x = element_blank(),
+    legend.position = "none",
+    plot.margin = margin(30, 60, 20, 30)
+  )
+```
+
